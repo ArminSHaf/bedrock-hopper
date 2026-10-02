@@ -14,6 +14,9 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { execFile, spawn } from "node:child_process";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { join } from "node:path";
 import { BrowserAdapter } from "./browser.js";
 import { classifyError } from "./classifier.js";
 import { acquireLock } from "./lock.js";
@@ -23,7 +26,9 @@ import {
   publishSettings,
   readClaudeSettings,
 } from "./settings.js";
-import { getClaudeConfigDir } from "./platform.js";
+import { getClaudeConfigDir, getDataDir } from "./platform.js";
+
+const COOLDOWN_MS = 5 * 60 * 1000;
 import type {
   CandidateOutcome,
   ErrorClassification,
@@ -65,6 +70,12 @@ export async function startRecovery(
 
   if (classification.action === "allow-existing-retries") {
     return immediateResult(incidentId, classification);
+  }
+
+  // Cooldown — skip if another recovery succeeded recently
+  const cooldownResult = await checkCooldown(incidentId);
+  if (cooldownResult) {
+    return cooldownResult;
   }
 
   // Snapshot Bedrock configuration before lock — used to detect if another recovery resolved this
@@ -246,15 +257,22 @@ async function runCandidateLoop(
     }
   }
 
-  // For skip-candidate or region-recovery, exclude the current failed region.
-  // A fresh key does not reset a regional quota — must advance to the next region.
+  // For skip-candidate or region-recovery, rotate to the NEXT region in the
+  // list after the current one (round-robin), so we cycle through all regions
+  // instead of always falling back to the first one.
   if (
     classification.action === "skip-candidate" ||
     classification.action === "region-recovery"
   ) {
     const currentRegion = getCurrentRegion(settingsBefore.content);
     if (currentRegion) {
-      candidates = candidates.filter((c) => c.region !== currentRegion);
+      const currentIdx = candidates.findIndex((c) => c.region === currentRegion);
+      if (currentIdx >= 0) {
+        candidates = [
+          ...candidates.slice(currentIdx + 1),
+          ...candidates.slice(0, currentIdx),
+        ];
+      }
       if (candidates.length === 0) {
         return {
           success: false,
@@ -384,6 +402,9 @@ async function runCandidateLoop(
           model: candidate.models.primary,
           durationMs: result.durationMs,
         });
+
+        await wakeIdleSessions(state.sessionId);
+        await writeCooldown(candidate.region);
 
         return result;
       }
@@ -541,4 +562,131 @@ function immediateResult(
     durationMs: 0,
     candidatesAttempted: [],
   };
+}
+
+function getCooldownPath(): string {
+  return join(getDataDir(), "last-recovery.json");
+}
+
+async function checkCooldown(incidentId: string): Promise<RecoveryResult | null> {
+  try {
+    const raw = await readFile(getCooldownPath(), "utf8");
+    const data = JSON.parse(raw);
+    const elapsed = Date.now() - data.timestamp;
+    if (elapsed < COOLDOWN_MS) {
+      const remainingSec = Math.ceil((COOLDOWN_MS - elapsed) / 1000);
+      await log({
+        event: "cooldown-active",
+        incidentId,
+        lastRegion: data.region,
+        elapsedSec: Math.floor(elapsed / 1000),
+        remainingSec,
+      });
+      return {
+        success: true,
+        region: data.region,
+        model: null,
+        reason: `Recovery already ran ${Math.floor(elapsed / 1000)}s ago (region ${data.region}). Cooldown: ${remainingSec}s remaining. New settings should already be active.`,
+        durationMs: 0,
+        candidatesAttempted: [],
+      };
+    }
+  } catch {
+    // No cooldown file or invalid — proceed
+  }
+  return null;
+}
+
+async function writeCooldown(region: string): Promise<void> {
+  try {
+    const dir = getDataDir();
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      getCooldownPath(),
+      JSON.stringify({ timestamp: Date.now(), region }),
+    );
+  } catch {
+    // best-effort
+  }
+}
+
+interface ClaudeSession {
+  pid: number;
+  sessionId: string;
+  status: string;
+  cwd: string;
+  kind: string;
+}
+
+async function wakeIdleSessions(triggerSessionId: string): Promise<void> {
+  try {
+    const sessions = await listClaudeSessions();
+    const idle = sessions.filter(
+      (s) => s.status === "idle" && s.sessionId !== triggerSessionId,
+    );
+
+    if (idle.length === 0) {
+      await log({ event: "wake-sessions", found: 0 });
+      return;
+    }
+
+    await log({ event: "wake-sessions", found: idle.length });
+
+    for (const session of idle) {
+      try {
+        const child = spawn(
+          "claude",
+          [
+            "--resume", session.sessionId,
+            "--dangerously-skip-permissions",
+            "-p", "continue",
+            "--print",
+          ],
+          {
+            stdio: "ignore",
+            detached: true,
+            shell: true,
+          },
+        );
+        child.unref();
+        await log({
+          event: "wake-session-sent",
+          sessionId: session.sessionId,
+          pid: session.pid,
+        });
+      } catch (err: unknown) {
+        await log({
+          event: "wake-session-failed",
+          sessionId: session.sessionId,
+          reason: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  } catch (err: unknown) {
+    await log({
+      event: "wake-sessions-error",
+      reason: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+function listClaudeSessions(): Promise<ClaudeSession[]> {
+  return new Promise((resolve) => {
+    execFile("claude", ["agents", "--json"], { shell: true, timeout: 10_000 }, (err, stdout) => {
+      if (err) {
+        resolve([]);
+        return;
+      }
+      try {
+        const parsed = JSON.parse(stdout);
+        if (Array.isArray(parsed)) {
+          resolve(parsed as ClaudeSession[]);
+          return;
+        }
+      } catch {
+        // invalid JSON
+      }
+      resolve([]);
+    });
+  });
 }
