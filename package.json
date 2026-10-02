@@ -1,0 +1,29 @@
+{
+  "name": "claude-bedrock-recovery",
+  "version": "0.1.0",
+  "description": "Automated AWS Bedrock region recovery for Claude Code",
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "bin": {
+    "claude-bedrock-recovery": "./dist/cli.js",
+    "claude-auto": "./dist/launcher-cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "@playwright/mcp": "^0.0.83",
+    "commander": "^13.1.0",
+    "node-pty": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.4"
+  }
+}

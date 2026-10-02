@@ -1,0 +1,7 @@
+{
+  "session_id": "test-session-007",
+  "cwd": "/home/user/project",
+  "hook_event_name": "StopFailure",
+  "error": "API error: server error. Service unavailable due to capacity constraints",
+  "error_details": "HTTP 503 ServiceUnavailableException"
+}

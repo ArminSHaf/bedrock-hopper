@@ -1,0 +1,7 @@
+{
+  "session_id": "test-session-003",
+  "cwd": "/home/user/project",
+  "hook_event_name": "StopFailure",
+  "error": "API error: model not found. The model us.anthropic.claude-opus-4-6 is not available in region eu-west-1",
+  "error_details": "HTTP 404 ResourceNotFoundException"
+}

@@ -1,0 +1,7 @@
+{
+  "session_id": "test-session-006",
+  "cwd": "/home/user/project",
+  "hook_event_name": "StopFailure",
+  "error": "API error: unexpected internal condition",
+  "error_details": "Something entirely novel happened"
+}

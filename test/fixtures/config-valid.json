@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "enabled": true,
+  "browser": {
+    "connection": "playwright-extension",
+    "channel": "chrome",
+    "profileName": "Default"
+  },
+  "awsIdentity": {
+    "accountId": "123456789012",
+    "role": "TestRole"
+  },
+  "claude": {
+    "configDirectory": "auto",
+    "configurationMethod": "setup-bedrock-wizard",
+    "continuationMode": "manual"
+  },
+  "regions": [
+    {
+      "region": "us-east-1",
+      "models": {
+        "primary": "us.anthropic.claude-opus-4-6",
+        "haiku": "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+      }
+    },
+    {
+      "region": "eu-west-1",
+      "models": {
+        "primary": "eu.anthropic.claude-opus-4-6",
+        "haiku": "eu.anthropic.claude-haiku-4-5-20251001-v1:0"
+      }
+    }
+  ],
+  "recovery": {
+    "trigger": "stop-failure",
+    "maxPasses": 1,
+    "refreshExpiredKeyInCurrentRegionFirst": true,
+    "recoverCapacityErrors": false,
+    "automaticRestart": false
+  },
+  "diagnostics": {
+    "verbose": false
+  }
+}

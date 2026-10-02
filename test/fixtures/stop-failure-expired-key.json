@@ -1,0 +1,7 @@
+{
+  "session_id": "test-session-002",
+  "cwd": "/home/user/project",
+  "hook_event_name": "StopFailure",
+  "error": "API error: authentication failed. The security token included in the request is expired",
+  "error_details": "HTTP 403 ExpiredTokenException: credential expired"
+}

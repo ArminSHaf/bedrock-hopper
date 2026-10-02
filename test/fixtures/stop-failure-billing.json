@@ -1,0 +1,7 @@
+{
+  "session_id": "test-session-004",
+  "cwd": "/home/user/project",
+  "hook_event_name": "StopFailure",
+  "error": "API error: billing error. Your spend limit has been reached",
+  "error_details": "HTTP 429 spend limit exceeded"
+}

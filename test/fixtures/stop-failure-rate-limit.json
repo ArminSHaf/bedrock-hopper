@@ -1,0 +1,10 @@
+{
+  "session_id": "test-session-001",
+  "prompt_id": "prompt-abc",
+  "transcript_path": "/tmp/transcript.jsonl",
+  "cwd": "/home/user/project",
+  "hook_event_name": "StopFailure",
+  "error": "API error: rate limit exceeded (429). Bedrock throttling limit reached for model us.anthropic.claude-opus-4-6 in region us-east-1",
+  "error_details": "HTTP 429 ThrottlingException: Too many requests",
+  "last_assistant_message": "I was working on..."
+}

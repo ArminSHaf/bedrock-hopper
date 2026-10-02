@@ -1,0 +1,12 @@
+node_modules/
+dist/
+config.json
+config.local.json
+runtime/
+logs/
+output/
+*.log
+.env
+.env.*
+!.env.example
+.playwright-mcp/

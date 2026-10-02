@@ -1,0 +1,7 @@
+{
+  "session_id": "test-session-005",
+  "cwd": "/home/user/project",
+  "hook_event_name": "StopFailure",
+  "error": "API error: invalid request. on-demand throughput isn't supported for this model in this region",
+  "error_details": "HTTP 400 ValidationException"
+}

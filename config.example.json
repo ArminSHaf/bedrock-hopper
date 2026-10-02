@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "enabled": true,
+  "browser": {
+    "connection": "playwright-extension",
+    "channel": "chrome",
+    "profileName": "Default",
+    "extensionToken": ""
+  },
+  "awsIdentity": {
+    "accountId": "123456789012",
+    "role": "*"
+  },
+  "claude": {
+    "configDirectory": "auto",
+    "continuationMode": "manual"
+  },
+  "regions": [
+    {
+      "region": "eu-west-1",
+      "models": { "primary": "global.anthropic.claude-opus-4-6-v1" }
+    },
+    {
+      "region": "eu-central-1",
+      "models": { "primary": "global.anthropic.claude-opus-4-6-v1" }
+    },
+    {
+      "region": "ap-northeast-1",
+      "models": { "primary": "global.anthropic.claude-opus-4-6-v1" }
+    }
+  ],
+  "recovery": {
+    "trigger": "stop-failure",
+    "maxPasses": 1,
+    "refreshExpiredKeyInCurrentRegionFirst": true,
+    "recoverCapacityErrors": false,
+    "automaticRestart": false
+  },
+  "diagnostics": {
+    "verbose": false
+  }
+}
