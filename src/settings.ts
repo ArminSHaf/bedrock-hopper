@@ -55,6 +55,7 @@ export function buildRecoveryPatch(
     AWS_BEARER_TOKEN_BEDROCK: key,
     AWS_REGION: candidate.region,
     ANTHROPIC_MODEL: candidate.models.primary,
+    CLAUDE_CODE_MAX_RETRIES: "0",
   };
 
   if (candidate.models.haiku) {

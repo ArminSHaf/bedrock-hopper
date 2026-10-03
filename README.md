@@ -136,16 +136,27 @@ Fix anything it flags. If it all passes, you're done.
 
 Only 400 and 429 trigger browser automation. Other errors are not recoverable by region rotation.
 
+## Instant recovery (no retry wait)
+
+By default, Claude Code retries failed API requests 10 times before giving up — wasting 2-5 minutes on a rate-limited region. The `install` command sets `CLAUDE_CODE_MAX_RETRIES=0` in your settings so the `StopFailure` hook fires **immediately** on the first 429. Recovery takes ~15 seconds instead of 5+ minutes.
+
+If you ever want Claude to retry on its own (e.g., for transient errors), set it higher:
+
+```json
+{ "env": { "CLAUDE_CODE_MAX_RETRIES": "2" } }
+```
+
 ## How it works under the hood
 
-1. Claude Code hits a rate limit and fires its `StopFailure` hook
-2. The hook runs this tool with the error details (piped as JSON on stdin)
-3. The tool classifies the error and picks the next region from your config
+1. Claude Code hits a rate limit → `CLAUDE_CODE_MAX_RETRIES=0` means no internal retries
+2. `StopFailure` hook fires immediately with the error details
+3. The tool classifies the error and picks the **next** region (round-robin through your list)
 4. Opens a new tab in your browser → navigates to the Bedrock API keys page for that region
 5. Clicks "Generate short-term API key" → extracts the key from the page
-6. Writes the new region, model, and key to `~/.claude/settings.json`
+6. Writes the new region, model, key, and `CLAUDE_CODE_MAX_RETRIES=0` to `~/.claude/settings.json`
 7. Closes its tab — your browser stays exactly as it was
-8. Claude Code picks up the new settings on its next API call
+8. Finds all idle Claude Code sessions and resumes them automatically
+9. 5-minute cooldown prevents cascading recoveries from multiple sessions
 
 All Claude Code sessions share `~/.claude/settings.json`, so a recovery in one terminal fixes all of them.
 
@@ -212,7 +223,7 @@ Common regions that support Claude models. Your account may not have access to a
 
 ## Limitations
 
-- **Hook timing:** The `StopFailure` hook fires only after Claude Code exhausts all its internal retries. If Claude retries successfully on its own, recovery never triggers. This is a Claude Code limitation, not a bug.
+- **Hook timing:** With `CLAUDE_CODE_MAX_RETRIES=0` (set automatically), recovery fires on the first 429. If you raise this value, Claude will retry internally before the hook fires.
 - **Browser must be open:** The tool automates your real browser. Chrome/Edge must be running with the Playwright extension and signed into AWS.
 - **Short-term keys expire:** Bedrock API keys last up to 12 hours (or until your AWS session expires). After expiry, the next rate limit will trigger a fresh key generation.
 - **One recovery at a time:** A file lock prevents concurrent recoveries from racing. If two sessions hit limits simultaneously, the second waits for the first.
