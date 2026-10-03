@@ -94,6 +94,15 @@ export async function installHook(
     });
   }
 
+  // Set CLAUDE_CODE_MAX_RETRIES so StopFailure fires quickly
+  if (typeof settings.env !== "object" || settings.env === null) {
+    settings.env = {};
+  }
+  const env = settings.env as Record<string, string>;
+  if (!env.CLAUDE_CODE_MAX_RETRIES) {
+    env.CLAUDE_CODE_MAX_RETRIES = "1";
+  }
+
   // Protect against concurrent settings edits
   const currentFile = await readClaudeSettings(configDir);
   if (currentFile.contentHash !== settingsFile.contentHash) {

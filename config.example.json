@@ -13,6 +13,7 @@
   },
   "claude": {
     "configDirectory": "auto",
+    "configurationMethod": "setup-bedrock-wizard",
     "continuationMode": "manual"
   },
   "regions": [

@@ -10,12 +10,13 @@
  * against a live AWS console before enabling automated recovery.
  */
 
+import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { log } from "./logger.js";
-import { redactKey } from "./platform.js";
+import { isMacOS, redactKey } from "./platform.js";
 import type { AwsIdentity, BrowserConfig, KeyGenResult } from "./types.js";
 
 const BEDROCK_CONSOLE_BASE = "https://console.aws.amazon.com/bedrock";
@@ -26,8 +27,33 @@ export class BrowserAdapter {
   private transport: StdioClientTransport | null = null;
   private ownedTabIndex: number | null = null;
   private previousTabIndex: number | null = null;
+  private savedFrontApp: string | null = null;
 
   constructor(private readonly config: BrowserConfig) {}
+
+  private async saveFocusedApp(): Promise<void> {
+    if (!isMacOS()) return;
+    try {
+      const app = await runAppleScript(
+        'tell application "System Events" to get name of first application process whose frontmost is true',
+      );
+      this.savedFrontApp = app.trim();
+    } catch {
+      this.savedFrontApp = null;
+    }
+  }
+
+  private async restoreFocusedApp(): Promise<void> {
+    if (!isMacOS() || !this.savedFrontApp) return;
+    try {
+      await runAppleScript(
+        `tell application "${this.savedFrontApp}" to activate`,
+      );
+    } catch {
+      // best-effort
+    }
+    this.savedFrontApp = null;
+  }
 
   async connect(): Promise<void> {
     const thisDir = dirname(fileURLToPath(import.meta.url));
@@ -79,6 +105,7 @@ export class BrowserAdapter {
       this.ownedTabIndex = null;
       this.previousTabIndex = null;
     }
+    await this.restoreFocusedApp();
     if (this.client) {
       try {
         await this.client.close();
@@ -202,6 +229,9 @@ export class BrowserAdapter {
    * Open a new browser tab and track it so we can close only our tab.
    */
   private async openNewTab(url: string): Promise<void> {
+    // Save the user's current app so we can restore focus after
+    await this.saveFocusedApp();
+
     // Record the currently active tab so we can switch back later
     const before = await this.callTool("browser_tabs", { action: "list" });
     const currentMatch = before.match(/^-\s*(\d+):\s*\(current\)/m);
@@ -234,7 +264,7 @@ export class BrowserAdapter {
       };
     }
 
-    if (!snap.includes(expected.accountId)) {
+    if (expected.accountId !== "*" && !snap.includes(expected.accountId)) {
       return {
         verified: false,
         reason: `Expected AWS account ${expected.accountId} but it was not found in the console header`,
@@ -451,4 +481,13 @@ function extractKeyFromSnapshot(snap: string): string | null {
   }
 
   return null;
+}
+
+function runAppleScript(script: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile("osascript", ["-e", script], { timeout: 5000 }, (err, stdout) => {
+      if (err) reject(err);
+      else resolve(stdout);
+    });
+  });
 }
