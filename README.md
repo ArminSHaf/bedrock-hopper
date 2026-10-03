@@ -246,8 +246,8 @@ Common regions that support Claude models. Your account may not have access to a
 |---|---|---|
 | macOS | Chrome (`chrome`) | Tested |
 | macOS | Edge (`msedge`) | Should work |
-| Windows | Edge (`msedge`) | Should work |
-| Windows | Chrome (`chrome`) | Should work |
+| Windows | Edge (`msedge`) | Tested |
+| Windows | Chrome (`chrome`) | Tested |
 | Linux | Chrome (`chrome`) | Untested |
 
 ## Architecture
