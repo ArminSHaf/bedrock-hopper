@@ -672,7 +672,7 @@ async function wakeIdleSessions(triggerSessionId: string): Promise<void> {
 
 function listClaudeSessions(): Promise<ClaudeSession[]> {
   return new Promise((resolve) => {
-    execFile("claude", ["agents", "--json"], { shell: true, timeout: 10_000 }, (err, stdout) => {
+    execFile("claude", ["sessions", "list", "--json"], { shell: true, timeout: 10_000 }, (err, stdout) => {
       if (err) {
         resolve([]);
         return;

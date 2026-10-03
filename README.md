@@ -61,6 +61,11 @@ Open `config.json` in any editor and fill in your details:
     "accountId": "123456789012",        // see below for how to find this
     "role": "*"                         // "*" matches any role
   },
+  "claude": {
+    "configDirectory": "auto",
+    "configurationMethod": "setup-bedrock-wizard",
+    "continuationMode": "manual"        // "auto" to resume sessions after recovery
+  },
   "regions": [
     { "region": "eu-west-1",      "models": { "primary": "global.anthropic.claude-opus-4-6-v1" } },
     { "region": "eu-central-1",   "models": { "primary": "global.anthropic.claude-opus-4-6-v1" } },
@@ -138,7 +143,7 @@ Only 400 and 429 trigger browser automation. Other errors are not recoverable by
 
 ## Instant recovery (no retry wait)
 
-By default, Claude Code retries failed API requests 10 times before giving up — wasting 2-5 minutes on a rate-limited region. The `install` command sets `CLAUDE_CODE_MAX_RETRIES=0` in your settings so the `StopFailure` hook fires **immediately** on the first 429. Recovery takes ~15 seconds instead of 5+ minutes.
+By default, Claude Code retries failed API requests 10 times before giving up — wasting 2-5 minutes on a rate-limited region. The `install` command sets `CLAUDE_CODE_MAX_RETRIES=0` in your settings so the `StopFailure` hook fires **immediately** on the first 429. After a successful recovery, the tool sets `CLAUDE_CODE_MAX_RETRIES=1` to allow one retry for transient errors while still failing fast. Recovery takes ~15 seconds instead of 5+ minutes.
 
 If you ever want Claude to retry on its own (e.g., for transient errors), set it higher:
 
@@ -153,7 +158,7 @@ If you ever want Claude to retry on its own (e.g., for transient errors), set it
 3. The tool classifies the error and picks the **next** region (round-robin through your list)
 4. Opens a new tab in your browser → navigates to the Bedrock API keys page for that region
 5. Clicks "Generate short-term API key" → extracts the key from the page
-6. Writes the new region, model, key, and `CLAUDE_CODE_MAX_RETRIES=0` to `~/.claude/settings.json`
+6. Writes the new region, model, key, and `CLAUDE_CODE_MAX_RETRIES=1` to `~/.claude/settings.json`
 7. Closes its tab — your browser stays exactly as it was
 8. Finds all idle Claude Code sessions and resumes them automatically
 9. 5-minute cooldown prevents cascading recoveries from multiple sessions
