@@ -16,7 +16,7 @@ import { dirname, join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { log } from "./logger.js";
-import { isMacOS, redactKey } from "./platform.js";
+import { isMacOS, isWindows, redactKey } from "./platform.js";
 import type { AwsIdentity, BrowserConfig, KeyGenResult } from "./types.js";
 
 const BEDROCK_CONSOLE_BASE = "https://console.aws.amazon.com/bedrock";
@@ -26,12 +26,26 @@ export class BrowserAdapter {
   private client: Client | null = null;
   private transport: StdioClientTransport | null = null;
   private ownedTabIndex: number | null = null;
+  private ownedTabCreated: boolean = false;
   private previousTabIndex: number | null = null;
   private savedFrontApp: string | null = null;
 
   constructor(private readonly config: BrowserConfig) {}
 
+  private savedWindowHandle: string | null = null;
+
   private async saveFocusedApp(): Promise<void> {
+    if (isWindows()) {
+      try {
+        const hwnd = await runPowerShell(
+          "Add-Type -MemberDefinition '[DllImport(\"user32.dll\")] public static extern IntPtr GetForegroundWindow();' -Name W -Namespace U -PassThru | % { [U.W]::GetForegroundWindow() }",
+        );
+        this.savedWindowHandle = hwnd.trim();
+      } catch {
+        this.savedWindowHandle = null;
+      }
+      return;
+    }
     if (!isMacOS()) return;
     try {
       const app = await runAppleScript(
@@ -44,6 +58,18 @@ export class BrowserAdapter {
   }
 
   private async restoreFocusedApp(): Promise<void> {
+    if (isWindows()) {
+      if (!this.savedWindowHandle || this.savedWindowHandle === "0") return;
+      try {
+        await runPowerShell(
+          `Add-Type -MemberDefinition '[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);' -Name W -Namespace U -PassThru | % { [U.W]::SetForegroundWindow([IntPtr]${this.savedWindowHandle}) }`,
+        );
+      } catch {
+        // best-effort
+      }
+      this.savedWindowHandle = null;
+      return;
+    }
     if (!isMacOS() || !this.savedFrontApp) return;
     try {
       await runAppleScript(
@@ -94,15 +120,19 @@ export class BrowserAdapter {
   async disconnect(): Promise<void> {
     if (this.ownedTabIndex !== null) {
       try {
-        // Switch back to the user's original tab before closing ours
+        // Switch back to the user's original tab
         if (this.previousTabIndex !== null) {
           await this.callTool("browser_tabs", { action: "select", index: this.previousTabIndex });
         }
-        await this.callTool("browser_tabs", { action: "close", index: this.ownedTabIndex });
+        // Only close the tab if we created it; leave reused tabs alone
+        if (this.ownedTabCreated) {
+          await this.callTool("browser_tabs", { action: "close", index: this.ownedTabIndex });
+        }
       } catch {
         // best-effort tab cleanup
       }
       this.ownedTabIndex = null;
+      this.ownedTabCreated = false;
       this.previousTabIndex = null;
     }
     await this.restoreFocusedApp();
@@ -226,23 +256,37 @@ export class BrowserAdapter {
   }
 
   /**
-   * Open a new browser tab and track it so we can close only our tab.
+   * Acquire a browser tab for automation. Reuses an existing Bedrock
+   * console tab when one is found; otherwise opens a new tab.
    */
-  private async openNewTab(url: string): Promise<void> {
-    // Save the user's current app so we can restore focus after
+  private async acquireTab(url: string): Promise<void> {
     await this.saveFocusedApp();
 
-    // Record the currently active tab so we can switch back later
     const before = await this.callTool("browser_tabs", { action: "list" });
     const currentMatch = before.match(/^-\s*(\d+):\s*\(current\)/m);
     this.previousTabIndex = currentMatch ? parseInt(currentMatch[1], 10) : null;
 
-    await this.callTool("browser_tabs", { action: "new", url });
+    // Look for an existing Bedrock console tab
+    const bedrockMatch = before.match(
+      /^-\s*(\d+):.*console\.aws\.amazon\.com\/bedrock/m,
+    );
+    if (bedrockMatch) {
+      const existingIdx = parseInt(bedrockMatch[1], 10);
+      await this.callTool("browser_tabs", { action: "select", index: existingIdx });
+      await this.navigate(url);
+      this.ownedTabIndex = existingIdx;
+      this.ownedTabCreated = false;
+      await log({ event: "tab-reused", index: existingIdx });
+      return;
+    }
 
+    // No existing tab — open a new one
+    await this.callTool("browser_tabs", { action: "new", url });
     const after = await this.callTool("browser_tabs", { action: "list" });
-    // Playwright MCP lists tabs as "- N: ..." lines
     const indices = [...after.matchAll(/^-\s*(\d+):/gm)].map(m => parseInt(m[1], 10));
     this.ownedTabIndex = indices.length > 0 ? indices[indices.length - 1] : null;
+    this.ownedTabCreated = true;
+    await log({ event: "tab-created", index: this.ownedTabIndex });
   }
 
   /**
@@ -307,8 +351,8 @@ export class BrowserAdapter {
 
     await log({ event: "key-gen-start", region });
 
-    // Open a dedicated tab — never navigate the user's existing tabs
-    await this.openNewTab(url);
+    // Reuse an existing Bedrock tab or open a new one
+    await this.acquireTab(url);
     await this.waitTime(5);
 
     // Verify identity before generating credentials
@@ -489,5 +533,19 @@ function runAppleScript(script: string): Promise<string> {
       if (err) reject(err);
       else resolve(stdout);
     });
+  });
+}
+
+function runPowerShell(script: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-Command", script],
+      { timeout: 5000 },
+      (err, stdout) => {
+        if (err) reject(err);
+        else resolve(stdout);
+      },
+    );
   });
 }
