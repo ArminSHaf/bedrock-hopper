@@ -26,7 +26,6 @@ export class BrowserAdapter {
   private client: Client | null = null;
   private transport: StdioClientTransport | null = null;
   private ownedTabIndex: number | null = null;
-  private ownedTabCreated: boolean = false;
   private previousTabIndex: number | null = null;
   private savedFrontApp: string | null = null;
 
@@ -120,19 +119,14 @@ export class BrowserAdapter {
   async disconnect(): Promise<void> {
     if (this.ownedTabIndex !== null) {
       try {
-        // Switch back to the user's original tab
+        await this.callTool("browser_tabs", { action: "close", index: this.ownedTabIndex });
         if (this.previousTabIndex !== null) {
           await this.callTool("browser_tabs", { action: "select", index: this.previousTabIndex });
-        }
-        // Only close the tab if we created it; leave reused tabs alone
-        if (this.ownedTabCreated) {
-          await this.callTool("browser_tabs", { action: "close", index: this.ownedTabIndex });
         }
       } catch {
         // best-effort tab cleanup
       }
       this.ownedTabIndex = null;
-      this.ownedTabCreated = false;
       this.previousTabIndex = null;
     }
     await this.restoreFocusedApp();
@@ -256,37 +250,25 @@ export class BrowserAdapter {
   }
 
   /**
-   * Acquire a browser tab for automation. Reuses an existing Bedrock
-   * console tab when one is found; otherwise opens a new tab.
+   * Open a new tab for automation, then immediately restore focus to the
+   * user's app.  Playwright operates via CDP so the tab doesn't need to
+   * be in the foreground.  The tab is closed in disconnect().
    */
-  private async acquireTab(url: string): Promise<void> {
+  private async openNewTab(url: string): Promise<void> {
     await this.saveFocusedApp();
 
     const before = await this.callTool("browser_tabs", { action: "list" });
     const currentMatch = before.match(/^-\s*(\d+):\s*\(current\)/m);
     this.previousTabIndex = currentMatch ? parseInt(currentMatch[1], 10) : null;
 
-    // Look for an existing Bedrock console tab
-    const bedrockMatch = before.match(
-      /^-\s*(\d+):.*console\.aws\.amazon\.com\/bedrock/m,
-    );
-    if (bedrockMatch) {
-      const existingIdx = parseInt(bedrockMatch[1], 10);
-      await this.callTool("browser_tabs", { action: "select", index: existingIdx });
-      await this.navigate(url);
-      this.ownedTabIndex = existingIdx;
-      this.ownedTabCreated = false;
-      await log({ event: "tab-reused", index: existingIdx });
-      return;
-    }
-
-    // No existing tab — open a new one
     await this.callTool("browser_tabs", { action: "new", url });
+
+    // Immediately give focus back — CDP works without foreground
+    await this.restoreFocusedApp();
+
     const after = await this.callTool("browser_tabs", { action: "list" });
     const indices = [...after.matchAll(/^-\s*(\d+):/gm)].map(m => parseInt(m[1], 10));
     this.ownedTabIndex = indices.length > 0 ? indices[indices.length - 1] : null;
-    this.ownedTabCreated = true;
-    await log({ event: "tab-created", index: this.ownedTabIndex });
   }
 
   /**
@@ -351,8 +333,7 @@ export class BrowserAdapter {
 
     await log({ event: "key-gen-start", region });
 
-    // Reuse an existing Bedrock tab or open a new one
-    await this.acquireTab(url);
+    await this.openNewTab(url);
     await this.waitTime(5);
 
     // Verify identity before generating credentials

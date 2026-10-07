@@ -403,7 +403,7 @@ async function runCandidateLoop(
           durationMs: result.durationMs,
         });
 
-        await wakeIdleSessions(state.sessionId);
+        await wakeAllSessions(state.sessionId);
         await writeCooldown(candidate.region);
 
         return result;
@@ -618,21 +618,23 @@ interface ClaudeSession {
   kind: string;
 }
 
-async function wakeIdleSessions(triggerSessionId: string): Promise<void> {
+async function wakeAllSessions(triggerSessionId: string): Promise<void> {
   try {
     const sessions = await listClaudeSessions();
-    const idle = sessions.filter(
-      (s) => s.status === "idle" && s.sessionId !== triggerSessionId,
-    );
+    const toWake = sessions.filter((s) => s.status === "idle");
 
-    if (idle.length === 0) {
-      await log({ event: "wake-sessions", found: 0 });
+    if (toWake.length === 0) {
+      await log({ event: "wake-sessions", found: 0, triggerSessionId });
       return;
     }
 
-    await log({ event: "wake-sessions", found: idle.length });
+    await log({
+      event: "wake-sessions",
+      found: toWake.length,
+      includesTrigger: toWake.some((s) => s.sessionId === triggerSessionId),
+    });
 
-    for (const session of idle) {
+    for (const session of toWake) {
       try {
         const child = spawn(
           "claude",
